@@ -2,8 +2,35 @@
 
 A quantitative finance tool that prices European options using **Black-Scholes** (closed-form analytical) and **Monte Carlo simulation** (10,000 GBM paths), with a live interactive frontend and a raw C++ HTTP backend — no frameworks, no external libraries.
 
-Built as a data structures & algorithms project for demonstrating real-world applications of stochastic processes, numerical methods, and systems programming.
+Demo Link: https://drive.google.com/file/d/1Oosx4bCdJ__r0HaYi7ErR9weqoAmZpzu/view?usp=drive_link
 
+---
+
+## Data Structures & Implementation Detail
+
+### **1. C++ Backend (`main.cpp`)**
+
+* **`std::vector` (Contiguous Memory):** Used as the primary container for high-performance data handling.
+    * **Time-Series Storage:** Stores parsed `OHLCVRow` objects for $O(1)$ random access.
+    * **Hot-Path Buffers:** Pre-allocating memory for 10,000 Monte Carlo payoff entries and 253-step Geometric Brownian Motion (GBM) paths to avoid heap churn.
+    * **Matrix Data:** A 2D vector (`std::vector<std::vector<double>>`) manages sample paths for chart rendering.
+* **`struct` (Value Aggregates):** Used for "Plain Old Data" (POD) objects with no private logic.
+    * **Examples:** `OHLCVRow` (CSV lines), `BSResult` (Black-Scholes/Greeks), and `MCResult` (Simulation outputs).
+* **`std::map` (Key-Value Store):** A red-black tree used for HTTP form-field mapping (e.g., Strike, Maturity). Chosen for reliability and simplicity given the small number of input keys.
+* **`std::string` & `std::ostringstream`:** Acts as the primary buffer for raw HTTP requests, multipart boundary parsing, and manual JSON construction without external libraries.
+* **`std::mt19937` (PRNG):** The Mersenne Twister engine drives the `std::normal_distribution` to generate high-entropy Gaussian increments for the Monte Carlo engine.
+
+### **2. Python Data Fetcher (`fetch_data.py`)**
+
+* **`pandas.DataFrame`:** The core engine for data acquisition. It handles multi-level indexing for tickers and performs vectorized operations for CSV serialization via `.to_csv()`.
+
+---
+
+### **3. Performance & Memory Strategy**
+
+* **Cache Friendliness:** By using `std::vector` for price data, we ensure sequential memory layout, which is critical for fast log-return calculations.
+* **Optimization:** Structs are passed by value, allowing the compiler to utilize **Named Return Value Optimization (NRVO)** to elide unnecessary copies.
+* **Allocation Control:** Large numerical arrays are sized once during initialization to prevent "amortized doubling" performance hits during the simulation.
 ---
 
 ## What it does
