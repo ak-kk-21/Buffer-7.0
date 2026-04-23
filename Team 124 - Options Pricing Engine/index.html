@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Options Pricing Engine</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg:       #0a0c10;
+    --surface:  #111318;
+    --border:   #1e2330;
+    --accent:   #00e5a0;
+    --accent2:  #7c6aff;
+    --accent3:  #ff6b6b;
+    --muted:    #4a5168;
+    --text:     #e8eaf2;
+    --subtext:  #8892aa;
+    --call:     #00e5a0;
+    --put:      #ff6b6b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* ── Header ── */
+  header { margin-bottom: 2.5rem; }
+  .tag {
+    display: inline-block;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(0,229,160,0.3);
+    padding: 0.25rem 0.75rem;
+    border-radius: 2px;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  h1 span { color: var(--accent); }
+  .subtitle { color: var(--subtext); font-size: 0.78rem; margin-top: 0.5rem; letter-spacing: 0.05em; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .card-title::before { content:''; display:inline-block; width:8px; height:8px; background:var(--accent); border-radius:50%; }
+
+  /* ── Form ── */
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+  label { display: block; font-size: 0.68rem; color: var(--subtext); letter-spacing: 0.1em; margin-bottom: 0.4rem; }
+  input[type=number], input[type=file] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.6rem 0.8rem;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    transition: border-color 0.2s;
+  }
+  input[type=number]:focus { outline: none; border-color: var(--accent); }
+  input[type=file] { cursor: pointer; padding: 0.5rem; color: var(--subtext); }
+  input[type=file]::file-selector-button {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 0.3rem 0.8rem;
+    border-radius: 3px;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-right: 0.75rem;
+  }
+
+  .hint { font-size: 0.65rem; color: var(--muted); margin-top: 0.35rem; }
+
+  /* ── Button ── */
+  button#runBtn {
+    margin-top: 1.25rem;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 4px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  button#runBtn:hover { opacity: 0.85; transform: translateY(-1px); }
+  button#runBtn:active { transform: translateY(0); }
+  button#runBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Status bar ── */
+  #status {
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-top: 0.75rem;
+    min-height: 1.2em;
+    letter-spacing: 0.05em;
+  }
+  #status.err { color: var(--put); }
+
+  /* ── Results (hidden until computed) ── */
+  #results { display: none; }
+
+  /* ── Stats row ── */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-box::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+  .stat-box.put-box::after { background: var(--put); }
+  .stat-box.neutral::after { background: var(--accent2); }
+  .stat-label { font-size: 0.6rem; letter-spacing: 0.15em; color: var(--subtext); text-transform: uppercase; margin-bottom: 0.4rem; }
+  .stat-value { font-size: 1.3rem; font-weight: 500; color: var(--text); }
+  .stat-value.call { color: var(--call); }
+  .stat-value.put  { color: var(--put); }
+  .stat-sub { font-size: 0.62rem; color: var(--muted); margin-top: 0.25rem; }
+
+  /* ── Greeks table ── */
+  .greeks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; }
+  .greek-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    font-size: 0.78rem;
+  }
+  .greek-name { color: var(--subtext); }
+  .greek-val  { color: var(--text); font-weight: 500; }
+
+  /* ── Charts ── */
+  .chart-wrap { position: relative; height: 260px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ── Sigma badge ── */
+  .sigma-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: rgba(124,106,255,0.12);
+    border: 1px solid rgba(124,106,255,0.3);
+    color: var(--accent2);
+    padding: 0.4rem 0.9rem;
+    border-radius: 3px;
+    font-size: 0.78rem;
+    margin-bottom: 1rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="tag">Financial Derivatives · Pricing Engine</div>
+    <h1>Options<br><span>Pricing Engine</span></h1>
+    <p class="subtitle">Black-Scholes · Monte Carlo · Geometric Brownian Motion</p>
+  </header>
+
+  <!-- Input Card -->
+  <div class="card">
+    <div class="card-title">Input Parameters</div>
+    <div class="form-grid">
+      <div>
+        <label>Yahoo Finance CSV</label>
+        <input type="file" id="csvFile" accept=".csv"/>
+        <div class="hint">Columns: Date, Close, High, Low, Open, Volume</div>
+      </div>
+      <div>
+        <label>Strike Price (K)</label>
+        <input type="number" id="strike" placeholder="e.g. 150" step="0.5"/>
+        <div class="hint">Leave blank → ATM (current spot)</div>
+      </div>
+      <div>
+        <label>Time to Maturity (years)</label>
+        <input type="number" id="maturity" value="1" step="0.05" min="0.01"/>
+        <div class="hint">0.5 = 6 months, 1 = 1 year</div>
+      </div>
+      <div>
+        <label>Risk-Free Rate</label>
+        <input type="number" id="rate" value="0.05" step="0.001" min="0"/>
+        <div class="hint">0.05 = 5%</div>
+      </div>
+    </div>
+    <button id="runBtn" onclick="run()">▶ Run Pricing Engine</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <!-- Sigma info -->
+    <div id="sigmaInfo" class="sigma-badge"></div>
+
+    <!-- Prices -->
+    <div class="card">
+      <div class="card-title">Option Prices</div>
+      <div class="stats-grid" id="priceStats"></div>
+    </div>
+
+    <!-- Greeks -->
+    <div class="card">
+      <div class="card-title">Greeks (Black-Scholes)</div>
+      <div class="greeks-grid" id="greeks"></div>
+    </div>
+
+    <!-- Charts row 1: Historical + GBM -->
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Historical Close Price</div>
+        <div class="chart-wrap"><canvas id="histChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">GBM Simulated Paths</div>
+        <div class="chart-wrap"><canvas id="gbmChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Charts row 2: Convergence -->
+    <div class="card">
+      <div class="card-title">Monte Carlo Convergence (Call Price vs # Simulations)</div>
+      <div class="chart-wrap"><canvas id="convChart"></canvas></div>
+    </div>
+
+  </div><!-- /results -->
+</div><!-- /wrapper -->
+
+<script>
+let charts = {};
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+const COLORS = {
+  accent:  '#00e5a0',
+  accent2: '#7c6aff',
+  accent3: '#ff6b6b',
+  muted:   'rgba(255,255,255,0.06)',
+  grid:    'rgba(255,255,255,0.05)',
+  text:    '#8892aa',
+};
+
+const baseChartOpts = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 600 },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#111318',
+      borderColor: '#1e2330',
+      borderWidth: 1,
+      titleColor: '#00e5a0',
+      bodyColor: '#e8eaf2',
+      padding: 10,
+    }
+  },
+  scales: {
+    x: {
+      ticks: { color: COLORS.text, font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 },
+      grid:  { color: COLORS.grid },
+      border:{ color: 'transparent' },
+    },
+    y: {
+      ticks: { color: COLORS.text, font: { family: 'JetBrains Mono', size: 10 } },
+      grid:  { color: COLORS.grid },
+      border:{ color: 'transparent' },
+    }
+  }
+};
+
+function fmt(v, d=2) { return Number(v).toFixed(d); }
+
+async function run() {
+  const fileInput = document.getElementById('csvFile');
+  const status = document.getElementById('status');
+  const btn = document.getElementById('runBtn');
+
+  if (!fileInput.files.length) {
+    status.textContent = '⚠ Please upload a CSV file first.';
+    status.className = 'err';
+    return;
+  }
+
+  btn.disabled = true;
+  status.className = '';
+  status.textContent = '⟳ Running simulation (10,000 paths)...';
+
+  const form = new FormData();
+  form.append('csv', fileInput.files[0]);
+  form.append('strike',   document.getElementById('strike').value   || '0');
+  form.append('maturity', document.getElementById('maturity').value || '1');
+  form.append('rate',     document.getElementById('rate').value     || '0.05');
+
+  try {
+    const res = await fetch('http://localhost:8081', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    status.textContent = '✓ Done';
+    render(data);
+  } catch(e) {
+    status.textContent = '✗ Error: ' + e.message;
+    status.className = 'err';
+  }
+  btn.disabled = false;
+}
+
+function render(d) {
+  document.getElementById('results').style.display = 'block';
+
+  // Sigma badge
+  document.getElementById('sigmaInfo').innerHTML =
+    `<span>σ</span> Historical Volatility: <strong>${fmt(d.sigma*100,1)}%</strong> &nbsp;|&nbsp; Spot: <strong>$${fmt(d.spot)}</strong> &nbsp;|&nbsp; Strike: <strong>$${fmt(d.K)}</strong>`;
+
+  // ── Prices ──
+  const psEl = document.getElementById('priceStats');
+  psEl.innerHTML = `
+    <div class="stat-box">
+      <div class="stat-label">BS Call</div>
+      <div class="stat-value call">$${fmt(d.bs.call)}</div>
+      <div class="stat-sub">d1=${fmt(d.bs.d1)} · d2=${fmt(d.bs.d2)}</div>
+    </div>
+    <div class="stat-box put-box">
+      <div class="stat-label">BS Put</div>
+      <div class="stat-value put">$${fmt(d.bs.put)}</div>
+      <div class="stat-sub">Analytical closed-form</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">MC Call</div>
+      <div class="stat-value call">$${fmt(d.mc.call)}</div>
+      <div class="stat-sub">±${fmt(d.mc.stdErrCall,3)} std err · 10K paths</div>
+    </div>
+    <div class="stat-box put-box">
+      <div class="stat-label">MC Put</div>
+      <div class="stat-value put">$${fmt(d.mc.put)}</div>
+      <div class="stat-sub">±${fmt(d.mc.stdErrPut,3)} std err · 10K paths</div>
+    </div>
+    <div class="stat-box neutral">
+      <div class="stat-label">BS vs MC Diff</div>
+      <div class="stat-value">$${fmt(Math.abs(d.bs.call - d.mc.call), 3)}</div>
+      <div class="stat-sub">Call price delta</div>
+    </div>
+  `;
+
+  // ── Greeks ──
+  const gEl = document.getElementById('greeks');
+  const G = d.bs;
+  gEl.innerHTML = [
+    ['Δ Call (Delta)',   fmt(G.deltaCall, 4)],
+    ['Δ Put (Delta)',    fmt(G.deltaPut,  4)],
+    ['Γ (Gamma)',        fmt(G.gamma,     5)],
+    ['V (Vega / 1%)',   '$'+fmt(G.vega,  4)],
+    ['Θ Call / day',    '$'+fmt(G.thetaCall,4)],
+    ['Θ Put / day',     '$'+fmt(G.thetaPut, 4)],
+  ].map(([n,v]) => `<div class="greek-item"><span class="greek-name">${n}</span><span class="greek-val">${v}</span></div>`).join('');
+
+  // ── Chart 1: Historical ──
+  destroyChart('hist');
+  const histLabels = d.historical.map(r => r.d);
+  const histData   = d.historical.map(r => r.c);
+  charts['hist'] = new Chart(document.getElementById('histChart'), {
+    type: 'line',
+    data: {
+      labels: histLabels,
+      datasets: [{
+        data: histData,
+        borderColor: COLORS.accent,
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: 'rgba(0,229,160,0.06)',
+        tension: 0.3,
+      }]
+    },
+    options: {
+      ...baseChartOpts,
+      plugins: {
+        ...baseChartOpts.plugins,
+        tooltip: {
+          ...baseChartOpts.plugins.tooltip,
+          callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
+        }
+      }
+    }
+  });
+
+  // ── Chart 2: GBM Paths ──
+  destroyChart('gbm');
+  const pathLen = d.gbmPaths[0].length;
+  const pathLabels = Array.from({length: pathLen}, (_,i) => i === 0 ? 'T=0' : i === pathLen-1 ? 'T=exp' : '');
+  const pathColors = ['#00e5a0','#7c6aff','#ff6b6b','#ffd166','#06d6a0','#118ab2','#ef476f','#ffd166'];
+
+  charts['gbm'] = new Chart(document.getElementById('gbmChart'), {
+    type: 'line',
+    data: {
+      labels: pathLabels,
+      datasets: d.gbmPaths.map((path, i) => ({
+        data: path,
+        borderColor: pathColors[i % pathColors.length],
+        borderWidth: 1.2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.2,
+        opacity: 0.7,
+      }))
+    },
+    options: {
+      ...baseChartOpts,
+      plugins: {
+        ...baseChartOpts.plugins,
+        tooltip: {
+          ...baseChartOpts.plugins.tooltip,
+          callbacks: { label: ctx => `Path ${ctx.datasetIndex+1}: $${ctx.parsed.y.toFixed(2)}` }
+        }
+      }
+    }
+  });
+
+  // ── Chart 3: Convergence ──
+  destroyChart('conv');
+  const convLabels = d.mc.convergence.map((_, i) => ((i+1)*500).toString());
+  const bsLine     = Array(d.mc.convergence.length).fill(d.bs.call);
+
+  charts['conv'] = new Chart(document.getElementById('convChart'), {
+    type: 'line',
+    data: {
+      labels: convLabels,
+      datasets: [
+        {
+          label: 'MC Call Price',
+          data: d.mc.convergence,
+          borderColor: COLORS.accent,
+          borderWidth: 2,
+          pointRadius: 2,
+          pointBackgroundColor: COLORS.accent,
+          fill: false,
+          tension: 0.3,
+        },
+        {
+          label: 'Black-Scholes',
+          data: bsLine,
+          borderColor: COLORS.accent3,
+          borderWidth: 1.5,
+          borderDash: [6, 3],
+          pointRadius: 0,
+          fill: false,
+        }
+      ]
+    },
+    options: {
+      ...baseChartOpts,
+      plugins: {
+        ...baseChartOpts.plugins,
+        legend: {
+          display: true,
+          labels: { color: COLORS.text, font: { family: 'JetBrains Mono', size: 11 }, boxWidth: 16 }
+        },
+        tooltip: {
+          ...baseChartOpts.plugins.tooltip,
+          callbacks: { label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toFixed(4)}` }
+        }
+      }
+    }
+  });
+
+  // Scroll into view
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
+</body>
+</html>
